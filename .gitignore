@@ -11,6 +11,10 @@ venv/
 htmlcov/
 .coverage
 
+# Caché local de TLEs (si TLE_CACHE_PATH apunta dentro del repo)
+tle_cache.json
+tracker_orbitas_tle_cache.json
+
 # Skyfield: datos descargados en runtime (efemérides, timescale)
 *.bsp
 deltat.data

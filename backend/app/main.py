@@ -16,6 +16,7 @@ from app.services.orbital_engine import (
     TLEError,
     TLETooOldError,
 )
+from app.services.tle_provider import TLENotFoundError, TLEUnavailableError
 
 app = FastAPI(
     title="Tracker Orbitas API",
@@ -49,6 +50,18 @@ def propagation_error_handler(_: Request, exc: PropagationError) -> JSONResponse
     # 409: el TLE es sintácticamente válido pero la órbita no es propagable
     # (satélite decaído, perigeo bajo tierra, etc.).
     return JSONResponse(status_code=409, content={"error": "propagation_failed", "detail": str(exc)})
+
+
+@app.exception_handler(TLENotFoundError)
+def tle_not_found_handler(_: Request, exc: TLENotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "unknown_satellite", "detail": str(exc)})
+
+
+@app.exception_handler(TLEUnavailableError)
+def tle_unavailable_handler(_: Request, exc: TLEUnavailableError) -> JSONResponse:
+    # 503: fallo transitorio de la fuente de TLEs sin fallback aplicable.
+    # El cliente puede reintentar o enviar un TLE manual en el campo 'tle'.
+    return JSONResponse(status_code=503, content={"error": "tle_unavailable", "detail": str(exc)})
 
 
 @app.get("/health", tags=["meta"])

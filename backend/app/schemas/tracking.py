@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Precisión a la que se cuantizan las coordenadas del observador.
 # 2 decimales ≈ 1.1 km: imperceptible para azimut/elevación de un satélite
@@ -50,9 +50,33 @@ class ObserverInput(BaseModel):
         return round(value, COORDINATE_DECIMALS)
 
 
-class PositionRequest(BaseModel):
-    tle: TLEInput
+class TrackingRequestBase(BaseModel):
+    """Base común: el satélite se identifica por TLE manual O por NORAD ID.
+
+    Con ``norad_id`` el backend resuelve el TLE automáticamente vía
+    CelesTrak (con caché de 24 h y fallback de resiliencia). El campo
+    ``tle`` se mantiene para usuarios avanzados que traen su propio TLE.
+    """
+
+    tle: Optional[TLEInput] = None
+    norad_id: Optional[int] = Field(
+        default=None, ge=1, le=999_999,
+        description="Número de catálogo NORAD (p. ej. 25544 = ISS)",
+        examples=[25544],
+    )
     observer: ObserverInput
+
+    @model_validator(mode="after")
+    def _exactly_one_satellite_source(self) -> "TrackingRequestBase":
+        if (self.tle is None) == (self.norad_id is None):
+            raise ValueError(
+                "Envía exactamente uno: 'norad_id' (resolución automática vía "
+                "CelesTrak) o 'tle' (TLE manual)."
+            )
+        return self
+
+
+class PositionRequest(TrackingRequestBase):
     timestamp: Optional[datetime] = Field(
         default=None,
         description="Instante UTC del cálculo; null = ahora",
@@ -66,7 +90,21 @@ class PositionRequest(BaseModel):
         return value
 
 
+class SatelliteInfo(BaseModel):
+    """Procedencia del TLE usado en el cálculo."""
+
+    name: str
+    norad_id: Optional[int] = None
+    tle_source: str = Field(
+        description="manual | celestrak | cache | stale_cache | emergency"
+    )
+    tle_fetched_at: Optional[datetime] = Field(
+        default=None, description="Cuándo se descargó el TLE (null si es manual)"
+    )
+
+
 class PositionResponse(BaseModel):
+    satellite: SatelliteInfo
     timestamp: datetime
     azimuth_deg: float
     elevation_deg: float
@@ -80,9 +118,7 @@ class PositionResponse(BaseModel):
     stale_tle: bool
 
 
-class PassesRequest(BaseModel):
-    tle: TLEInput
-    observer: ObserverInput
+class PassesRequest(TrackingRequestBase):
     start: Optional[datetime] = Field(
         default=None, description="Inicio de la búsqueda en UTC; null = ahora"
     )
@@ -116,6 +152,7 @@ class PassWindowResponse(BaseModel):
 
 
 class PassesResponse(BaseModel):
+    satellite: SatelliteInfo
     search_start: datetime
     search_end: datetime
     min_culmination_deg: float

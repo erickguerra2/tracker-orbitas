@@ -19,10 +19,14 @@ tracker-orbitas/
 │   │   │           └── tracking.py  # Endpoints /position y /passes
 │   │   ├── schemas/
 │   │   │   └── tracking.py          # Contrato de la API (Pydantic v2)
-│   │   └── services/
-│   │       └── orbital_engine.py    # Motor SGP4/Skyfield (sin dependencias HTTP)
+│   │   ├── services/
+│   │   │   ├── orbital_engine.py    # Motor SGP4/Skyfield (sin dependencias HTTP)
+│   │   │   └── tle_provider.py      # TLEs de CelesTrak: caché 24h + fallback
+│   │   └── data/
+│   │       └── emergency_tles.json  # TLEs de último recurso (refrescar en deploy)
 │   ├── tests/
-│   │   └── test_orbital_engine.py
+│   │   ├── test_orbital_engine.py
+│   │   └── test_tle_provider.py
 │   └── requirements.txt
 ├── frontend/                        # React (próxima fase)
 └── README.md
@@ -50,6 +54,13 @@ espacios significativos y signos `+` que se corrompen al URL-encodearlas, y el
 navegador reenvía coordenadas con alta frecuencia, donde el caching por URL no
 aporta nada.
 
+El satélite se identifica de **una** de dos formas (exactamente una, nunca ambas):
+
+- `"norad_id": 25544` — el backend resuelve el TLE automáticamente vía
+  CelesTrak (caché de 24 h + cadena de fallback; ver abajo). **Modo
+  recomendado para el frontend.**
+- `"tle": { name, line1, line2 }` — TLE manual, para usuarios avanzados.
+
 ### `POST /api/v1/tracking/position`
 
 Posición instantánea del satélite relativa al observador.
@@ -57,11 +68,7 @@ Posición instantánea del satélite relativa al observador.
 ```jsonc
 // Request
 {
-  "tle": {
-    "name": "ISS (ZARYA)",
-    "line1": "1 25544U 98067A   24051.51610305  .00018603  00000+0  33412-3 0  9996",
-    "line2": "2 25544  51.6401  86.9469 0004617  93.6643  17.0807 15.50113759439648"
-  },
+  "norad_id": 25544,         // ISS; o bien un objeto "tle" manual
   "observer": {
     "latitude": 14.6349,     // grados WGS84, del navigator.geolocation
     "longitude": -90.5069,
@@ -74,6 +81,12 @@ Posición instantánea del satélite relativa al observador.
 ```jsonc
 // Response 200
 {
+  "satellite": {
+    "name": "ISS (ZARYA)",
+    "norad_id": 25544,
+    "tle_source": "celestrak",   // manual | celestrak | cache | stale_cache | emergency
+    "tle_fetched_at": "2024-02-20T11:02:00Z"
+  },
   "timestamp": "2024-02-20T12:23:11Z",
   "azimuth_deg": 213.4,            // 0°=N, 90°=E
   "elevation_deg": 42.1,           // negativo = bajo el horizonte
@@ -93,7 +106,7 @@ Posición instantánea del satélite relativa al observador.
 Próximas ventanas de paso sobre la ubicación del observador.
 
 ```jsonc
-// Request: mismos campos tle/observer, más:
+// Request: mismos campos norad_id|tle y observer, más:
 {
   "start": null,              // inicio de búsqueda UTC; null = ahora
   "hours": 24,                // ventana de búsqueda (máx 120)
@@ -104,6 +117,7 @@ Próximas ventanas de paso sobre la ubicación del observador.
 ```jsonc
 // Response 200
 {
+  "satellite": { "name": "ISS (ZARYA)", "norad_id": 25544, "tle_source": "cache", "tle_fetched_at": "..." },
   "search_start": "...", "search_end": "...",
   "min_culmination_deg": 10.0,
   "tle_age_days": 0.3, "stale_tle": false,
@@ -122,12 +136,40 @@ Próximas ventanas de paso sobre la ubicación del observador.
 
 ### Errores
 
-| HTTP | `error`              | Causa                                                        |
-|------|----------------------|--------------------------------------------------------------|
-| 422  | `invalid_tle`        | TLE no parseable o mal formado                                |
-| 422  | `tle_too_old`        | Época del TLE a >30 días del instante solicitado              |
-| 422  | —                    | Validación Pydantic (lat/lon fuera de rango, hours > 120, …)  |
-| 409  | `propagation_failed` | SGP4 no puede propagar (satélite decaído, perigeo negativo)   |
+| HTTP | `error`              | Causa                                                          |
+|------|----------------------|----------------------------------------------------------------|
+| 422  | `invalid_tle`        | TLE no parseable o mal formado                                  |
+| 422  | `tle_too_old`        | Época del TLE a >30 días del instante solicitado                |
+| 422  | —                    | Validación Pydantic (lat/lon fuera de rango, ambos o ninguno de `tle`/`norad_id`, …) |
+| 409  | `propagation_failed` | SGP4 no puede propagar (satélite decaído, perigeo negativo)     |
+| 404  | `unknown_satellite`  | CelesTrak no conoce ese NORAD ID                                |
+| 503  | `tle_unavailable`    | CelesTrak caído y sin caché ni TLE de emergencia para ese ID    |
+
+## Proveedor de TLEs (`tle_provider.py`)
+
+Cadena de resolución al recibir un `norad_id` (de más fresco a más degradado):
+
+1. **Caché local fresca** (memoria + JSON en disco, TTL 24 h) → `cache`
+2. **Descarga de CelesTrak** (`gp.php?CATNR=...`, también soporta
+   `refresh_group("stations"|"noaa"|...)` para precalentar el catálogo) → `celestrak`
+3. **Caché vencida de cualquier edad**, si CelesTrak está caído → `stale_cache`
+4. **TLE de emergencia** empaquetado en `app/data/emergency_tles.json` → `emergency`
+5. `503 tle_unavailable` — nunca un 500 crudo; el cliente puede reintentar o
+   enviar un TLE manual.
+
+El `tle_source` viaja en cada respuesta para que el frontend avise cuando los
+datos vienen degradados. Importante: el motor orbital aplica su guardia física
+**independiente** de esta cadena — un TLE de emergencia con época a >30 días
+del instante solicitado se rechaza igualmente (`tle_too_old`), porque una
+posición calculada con un TLE vencido es errónea en silencio. Por eso los TLEs
+de emergencia deben refrescarse en cada deploy (requiere internet):
+
+```bash
+cd backend && python -m app.services.tle_provider 25544 28654 33591
+```
+
+Configuración por entorno: `TLE_CACHE_PATH` (ruta del JSON de caché; por
+defecto en el directorio temporal del sistema) y `CORS_ORIGINS`.
 
 ## Casos esquina críticos y su manejo
 
