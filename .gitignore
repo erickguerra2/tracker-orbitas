@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Skyfield: datos descargados en runtime (efemérides, timescale)
+*.bsp
+deltat.data
+deltat.preds
+Leap_Second.dat
+
+# Node / React
+node_modules/
+dist/
+build/
+.env.local
+
+# Entornos / IDE
+.env
+.idea/
+.vscode/
+*.swp
+.DS_Store
