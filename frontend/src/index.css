@@ -2,4 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Estilos visuales detallados: fase de diseño. */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #1e293b transparent;
+  }
+  body {
+    @apply bg-cosmos-950 text-slate-100 antialiased;
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer utilities {
+  .glow-sky {
+    filter: drop-shadow(0 0 6px theme('colors.sky.400'));
+  }
+  .glow-emerald {
+    filter: drop-shadow(0 0 6px theme('colors.emerald.400'));
+  }
+  .panel {
+    @apply rounded-xl border border-slate-800 bg-slate-900/80 backdrop-blur-sm;
+  }
+  .label {
+    @apply text-[10px] font-semibold uppercase tracking-widest text-slate-500;
+  }
+  .metric {
+    @apply font-mono text-2xl font-medium tracking-tight text-emerald-400;
+  }
+}

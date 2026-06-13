@@ -1,6 +1,4 @@
-/** Placeholder: ubicación actual del observador. */
-
-import { MapPin } from 'lucide-react';
+import { MapPin, Navigation } from 'lucide-react';
 
 import { useTracking } from '../../context/TrackingContext';
 
@@ -9,26 +7,51 @@ export function ObserverPanel() {
   const { observer, accuracyM, status } = geolocation;
 
   return (
-    <section className="rounded-lg border border-slate-700 p-4">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-400">
-        <MapPin className="h-4 w-4" aria-hidden /> Observador
-      </h2>
+    <div className="panel p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <MapPin className="h-3.5 w-3.5 text-sky-400" />
+        <span className="label">Observador</span>
+      </div>
+
       {observer ? (
-        <dl className="grid grid-cols-2 gap-2 text-sm">
-          <dt>Latitud</dt>
-          <dd>{observer.latitude.toFixed(4)}°</dd>
-          <dt>Longitud</dt>
-          <dd>{observer.longitude.toFixed(4)}°</dd>
-          <dt>Altitud</dt>
-          <dd>{(observer.altitude_m ?? 0).toFixed(0)} m</dd>
-          <dt>Precisión</dt>
-          <dd>{accuracyM !== null ? `±${accuracyM.toFixed(0)} m` : '—'}</dd>
-        </dl>
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col">
+              <span className="label">Latitud</span>
+              <span className="font-mono text-sm text-slate-200">{observer.latitude.toFixed(4)}°</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="label">Longitud</span>
+              <span className="font-mono text-sm text-slate-200">{observer.longitude.toFixed(4)}°</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="label">Altitud</span>
+              <span className="font-mono text-sm text-slate-200">{(observer.altitude_m ?? 0).toFixed(0)} m</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="label">Precisión GPS</span>
+              <span className={`font-mono text-sm ${accuracyM !== null && accuracyM < 50 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {accuracyM !== null ? `±${accuracyM.toFixed(0)} m` : '—'}
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5">
+            <Navigation className="h-3 w-3 text-emerald-400" />
+            <span className="text-[10px] text-emerald-400">GPS activo</span>
+          </div>
+        </>
       ) : (
-        <p className="text-sm text-slate-500">
-          {status === 'idle' ? 'Esperando permiso de ubicación…' : 'Sin posición disponible.'}
-        </p>
+        <div className="flex flex-col items-center gap-2 py-4 text-center">
+          <MapPin className="h-7 w-7 text-slate-600" />
+          <p className="text-xs text-slate-500">
+            {status === 'denied'
+              ? 'Permiso denegado'
+              : status === 'unavailable'
+              ? 'GPS no disponible'
+              : 'Esperando ubicación…'}
+          </p>
+        </div>
       )}
-    </section>
+    </div>
   );
 }
