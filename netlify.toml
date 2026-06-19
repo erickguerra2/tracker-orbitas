@@ -5,3 +5,12 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# Reenvía las llamadas /api/* al backend de Render. El navegador solo habla
+# con Netlify (sin CORS); Netlify hace el proxy al origen real.
+# Si tu servicio de Render queda con otra URL, actualiza el dominio abajo.
+[[redirects]]
+  from = "/api/*"
+  to = "https://tracker-orbitas-backend.onrender.com/api/:splat"
+  status = 200
+  force = true
