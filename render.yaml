@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: tracker-orbitas-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://tracker-orbitas.netlify.app
+    healthCheckPath: /health
